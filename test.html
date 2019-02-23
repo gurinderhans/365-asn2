@@ -1,0 +1,139 @@
+
+<input type='file' id='jpg' />
+<br />
+<br />
+<div>
+<canvas id="canvas" />
+</div>
+
+<script>
+document.getElementById('jpg').onchange = draw;
+function draw(e) {
+  var canvas = document.getElementById('canvas')
+  var ctx = canvas.getContext('2d')
+  var img = new Image
+  img.onload = function() {
+    canvas.setAttribute('width', img.width)
+    canvas.setAttribute('height', img.height)
+    ctx.drawImage(img, 0,0)
+
+    var imgd = ctx.getImageData(0,0, img.width, img.height)
+    processData(imgd)
+    ctx.putImageData(imgd, 0,0)
+  }
+  img.src = URL.createObjectURL(e.target.files[0])
+}
+
+function processData(image) {
+  
+  let {data, width, height} = image
+
+  // 1. rgb -> yuv
+  let yuv = []
+  for(let i=0; i<data.length; i+=4) {
+    let [y,u,v] = rgb2yuv(data[i], data[i+1], data[i+2])
+    yuv.push(y,u,v);
+  }
+
+  // 2. chroma subsampling 4:2:0
+  let uvSampled = [[],[]]
+  for (let i=0; i<height; i+=2) {
+    for (let j=0, cols=width*3; j<cols; j+=12) {
+      let topRow = data.slice(i*cols + j, i*cols + j+12)
+      let bottomRow = data.slice((i+1)*cols + j, (i+1)*cols + j+12)
+    }
+  }
+
+
+
+
+  // for (let i=0; i<data.length; i+=4) {
+  //   let [y,u,v] = rgb2yuv(data[i], data[i+1], data[i+2])
+  //   // data[i] = y
+  //   // data[i+1] = u
+  //   // data[i+2] = v
+  // }
+  //
+  // // subsampling chroma - 4:2:0
+  // let sampledImage = new Array(height).fill(undefined).map(_ => [])
+  // for (let i=0; i<height; i+=2) { // every two rows
+  //   for (let j=0, cols=width*4; j<cols; j+=16) { // every four pixels
+  //     let topRow = data.slice(i*cols + j, i*cols + j+16)
+  //     let bottomRow = data.slice((i+1)*cols + j, (i+1)*cols + j+16)
+  //
+  //     let [rowa, rowb] = YUV444to420([
+  //       topRow,
+  //       bottomRow
+  //     ])
+  //
+  //     sampledImage[i].push.apply(sampledImage[i], rowa)
+  //     sampledImage[i+1].push.apply(sampledImage[i+1], rowb)
+  //   }
+  // }
+  // sampledImage = sampledImage.flat()
+  //
+  // // dct transformation
+  // // for (let i=0; i<height; i+=8) {
+  // // }
+  //
+  //
+  // var chroma420toRGBA = []
+  // for (let i=0; i<sampledImage.length; i+=3) {
+  //   let [r,g,b] = yuv2rgb(sampledImage[i], sampledImage[i+1], sampledImage[i+2])
+  //   chroma420toRGBA.push(r,g,b,255)
+  // }
+  //
+  // for (let i=0; i<data.length;i++){
+  //   data[i] = chroma420toRGBA[i]
+  // }
+}
+
+function dct_fwd(frame8x8) {
+
+}
+
+function DTC_C(u) {
+  if (u === 0) {
+    return 1/Math.sqrt(2)
+  } else {
+    return 1
+  }
+}
+
+function rgb2yuv(r,g,b)
+{
+  y = r *  .299000 + g *  .587000 + b *  .114000
+  u = r * -.168736 + g * -.331264 + b *  .500000 + 128
+  v = r *  .500000 + g * -.418688 + b * -.081312 + 128
+
+  return [y,u,v]
+ }
+
+function yuv2rgb(y,u,v)
+{
+  r = y + 1.4075 * (v - 128);
+  g = y - 0.3455 * (u - 128) - (0.7169 * (v - 128));
+  b = y + 1.7790 * (u - 128);
+
+  return [r,g,b]
+}
+
+function YUV444to420(frame) {
+  let outframe = [[],[]];
+  for (let i=0; i<16; i+=8) {
+    y1=frame[0][i]
+    y2=frame[0][i+4]
+    y3=frame[1][i]
+    y4=frame[1][i+4]
+
+    u=(frame[0][i+1] + frame[0][i+5]) / 2
+    v=(frame[0][i+2] + frame[0][i+6]) / 2
+
+    outframe[0].push(y1,u,v,y2,u,v)
+    outframe[1].push(y3,u,v,y4,u,v)
+  }
+
+  return outframe
+}
+
+</script>
