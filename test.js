@@ -63,64 +63,178 @@ function processData(image) {
     }
   }
 
-  let yuvSampled = [yuv[0], ...uvChroma]
+  let yuvSampled = [
+    yuv[0],
+    ...uvChroma
+  ]
+  // drawImage(channelToRGBA(yuvSampled[0]), width, height)
 
-  drawImage(channelToRGBA(yuvSampled[0]), width, height)
-  drawImage(channelToRGBA(yuvSampled[1]), width/2, height/2)
-  drawImage(channelToRGBA(yuvSampled[2]), width/2, height/2)
 
+  // 3. dct transformation & quantization & inverse
 
-  // 3. dct transformation
-  let TMatrix = new Array(8).fill().map(_ => [])
+  // 3a. convert all channel 1d arrays into 8x8 blocks for DCT
+  let yuvBlocks = [
+    chanArrayToBlocks(yuvSampled[0], width, height),
+    chanArrayToBlocks(yuvSampled[1], width/2, height/2),
+    chanArrayToBlocks(yuvSampled[2], width/2, height/2)
+  ]
+
+  // 3b. initialize Q-matrix and T-matrix
+  const q50Matrix = [
+    [16,11,10,16,24,40,51,61],
+    [12,12,14,19,26,58,60,55],
+    [14,13,16,24,40,57,69,56],
+    [14,17,22,29,51,87,80,62],
+    [18,22,37,56,68,109,103,77],
+    [24,35,55,64,81,104,113,92],
+    [49,64,78,87,103,121,120,101],
+    [72,92,95,98,112,100,103,99]
+  ]
+  const q10Matrix = [
+    [80,60,50,80,120,200,255,255],
+    [55,60,70,95,130,255,255,255],
+    [70,65,80,120,200,255,255,255],
+    [70,85,110,145,255,255,255,255],
+    [90,100,185,255,255,255,255,255],
+    [120,175,255,255,255,255,255,255],
+    [245,255,255,255,255,255,255,255],
+    [255,255,255,255,255,255,255,255],
+  ]
+
+  let Tmatrix = new Array(8).fill().map(_ => [])
   for (let i=0; i<8; ++i) {
     for (let j=0; j<8; j++) {
-      TMatrix[i][j] = dct(i,j)
+      Tmatrix[i][j] = dct(i,j)
     }
   }
 
-  // 3a. block DCT for Y channel
-  let yDCT = []
-  for (let i=0; i<height/8; ++i) {
-    for (let j=0; j<width/8; ++j) {
-      r=blockDCT(yuvSampled[0], TMatrix, width, height, i,j)
-      yDCT.push(r)
-    }
-  }
-  drawImage(channelToRGBA(yDCT.flat(2)), width, height)
-
-  let uvDCT = [[],[]]
-  // 3b. block DCT for U&V channels
-  for (let i=0; i<height/16; ++i) {
-    for (let j=0; j<width/16; ++j) {
-      r=blockDCT(yuvSampled[1], TMatrix, width/2, height/2, i,j)
-      r1=blockDCT(yuvSampled[2], TMatrix, width/2, height/2, i,j)
-      uvDCT[0].push(r)
-      uvDCT[1].push(r1)
+  // 3c. DCT -> quantize -> unquantize -> IDCT
+  for (let i=0; i<yuvBlocks.length; ++i) {
+    const blocks = yuvBlocks[i]
+    for (let j=0; j<blocks.length; ++j) {
+      // i. normal -> DCT
+      let dct = blockDCT(Tmatrix, blocks[j]);
+      // ii. DCT -> quantize
+      let quantized = quantize(q10Matrix, dct)
+      // iii. quantize -> unquantize
+      let unquantized = unquantize(q10Matrix, quantized)
+      // iv. unquantize -> IDCT
+      let idct = blockIDCT(Tmatrix, unquantized)
+      yuvBlocks[i][j] = idct
     }
   }
 
-  drawImage(channelToRGBA(uvDCT[0].flat(2)), width/2, height/2)
-  drawImage(channelToRGBA(uvDCT[1].flat(2)), width/2, height/2)
+  // 4. combine y/u/v channels into one
+  let yChan = blocksToChanArray(yuvBlocks[0], width, height)
+  let uChan = blocksToChanArray(yuvBlocks[1], width/2, height/2)
+  let vChan = blocksToChanArray(yuvBlocks[2], width/2, height/2)
+
+  let yuvMerged = Array(height).fill().map(_ => [])
+  for (let i=0, counter=0; i<height; i+=2) {
+    for (let j=0; j<width; j+=2, counter++) {
+      const topRow = yChan.slice(i*width + j, i*width + j+2)
+      const bottomRow = yChan.slice((i+1) * width + j, (i+1) * width + j+2)
+      const Uval = uChan[counter]
+      const Vval = vChan[counter]
+
+      yuvMerged[i].push(topRow[0],Uval, Vval, topRow[1], Uval, Vval)
+      yuvMerged[i+1].push(bottomRow[0],Uval, Vval, bottomRow[1], Uval, Vval)
+    }
+  }
+  yuvMerged = yuvMerged.flat()
+
+
+  // 5. yuv -> rgb
+  let rgba=[]
+  for (let i=0; i<yuvMerged.length; i+=3) {
+    const [r,g,b] = yuv2rgb(yuvMerged[i], yuvMerged[i+1], yuvMerged[i+2])
+    rgba.push(r,g,b,255)
+  }
+  drawImage(rgba, width, height)
 
 }
 
-function blockDCT(channel, TMatrix, width, height, i,j) {
-  
-  let block = new Array(8).fill().map(_ => [])
+function chanArrayToBlocks(chan, width, height, blockSize = 8) {
+  let blocks = []
+  for (let i=0; i<height/blockSize; ++i) {
+    for (let j=0; j<width/blockSize; j++) {
+      let block = Array(blockSize).fill().map(_ => [])
+      for (let y=0; y<blockSize; ++y) {
+        for (let x=0; x<blockSize; x++) {
+          const idx = (width * i * blockSize) + (y * width) + x + (j * blockSize)
+          block[y][x] = chan[idx]
+        }
+      }
+      blocks.push(block)
+    }
+  }
+  return blocks
+}
+
+function blocksToChanArray(blocks, width, height, blockSize = 8) {
+  let chanArray = []
+  for (let i=0; i<blocks.length; i+=width/blockSize) {
+    let blockRow = blocks.slice(i, i+(width/blockSize))
+    for (let y=0; y<blockSize; ++y) {
+      for (let j=0; j<(width/blockSize); j++) {
+        for (let x=0; x<blockSize; ++x) {
+          const val = blockRow[j][y][x]
+          chanArray.push(val)
+        }
+      }
+    }
+  }
+  return chanArray
+}
+
+function quantize(qMatrix, channel) {
+  let res = new Array(8).fill().map(_ => [])
   for (let y=0; y<8; ++y) {
     for (let x=0; x<8; x++) {
-      let idx = (height*i*8) + y*width + x + (j*8)
-      if (idx >= channel.length) console.log("ERR")
-      block[y][x] = channel[idx] - 128
+      res[y][x] = Math.round(channel[y][x] / qMatrix[y][x])
+    }
+  }
+  return res
+}
+
+function unquantize(qMatrix, channel) {
+  let res = new Array(8).fill().map(_ => [])
+  for (let y=0; y<8; ++y) {
+    for (let x=0; x<8; x++) {
+      res[y][x] = qMatrix[y][x] * channel[y][x]
+    }
+  }
+  return res
+}
+
+function blockDCT(Tmatrix, block) {
+  for (let y=0; y<8; ++y) {
+    for (let x=0; x<8; x++) {
+      block[y][x] = block[y][x] - 128
     }
   }
 
-  let dctOut = 
-    matrixMultiply(
-      matrixMultiply(TMatrix, block),
-      transpose(TMatrix))
+  return matrixMultiply(
+          matrixMultiply(
+            Tmatrix,
+            block),
+          transpose(Tmatrix))
+}
 
-  return dctOut
+function blockIDCT(Tmatrix, block) {
+  let idctMatrix = matrixMultiply(
+          matrixMultiply(
+            transpose(Tmatrix),
+            block),
+          Tmatrix)
+
+  for (let y=0; y<8; ++y) {
+    for (let x=0; x<8; x++) {
+      idctMatrix[y][x] = idctMatrix[y][x] + 128
+    }
+  }
+
+  return idctMatrix
 }
 
 function channelToRGBA(chan) {
@@ -131,8 +245,6 @@ function channelToRGBA(chan) {
   }
   return rgba
 }
-
-// ---------------- util funcs below
 
 function dct(i,j) {
   if (i == 0) {
@@ -147,7 +259,7 @@ function matrixMultiply(A, B) {
   
   return result.map((row, i) => {
     return row.map((val, j) => {
-      return A[i].reduce((sum, elm, k) => sum + (elm*B[k][j]) ,0)
+      return A[i].reduce((sum, elm, k) => sum + (elm*B[k][j]), 0)
     })
   })
 }
@@ -176,6 +288,5 @@ function chroma420(frame) {
     const val = (frame[i] + frame[i+1] +1) / 2
     ret.push(val)
   }
-
   return ret
 }
