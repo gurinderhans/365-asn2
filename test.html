@@ -1,8 +1,30 @@
+<style type="text/css">
+.imageDiv {
+    display: inline-block;
+    border: 1px solid;
+    margin: 20px;
+}
+#canvas {
+  display:block;
+}
+</style>
+<h3>Quantization Level</h3>
+
+<select name="qvals" id="qvals">
+  <option value="10">Level 10</option>
+  <option value="50">Level 50</option>
+  <option value="90">Level 90</option>
+</select>
+
+<br />
+<br />
 <input type='file' id='jpg' />
 <br />
 <br />
-<div id="images">
+<div id="original">
   <canvas id="canvas" />
+</div>
+<div id="images">
 </div>
 <div id="debug">
 </div>
