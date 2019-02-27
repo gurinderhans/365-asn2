@@ -4,6 +4,11 @@ function draw(e) {
   var ctx = canvas.getContext('2d')
   var img = new Image()
   img.onload = function() {
+
+    const titleEl = document.createElement("h2")
+    titleEl.innerText = "Original"
+    document.getElementById("images").prepend(titleEl)
+
     canvas.setAttribute('width', img.width)
     canvas.setAttribute('height', img.height)
     ctx.drawImage(img, 0,0)
@@ -15,8 +20,11 @@ function draw(e) {
   img.src = URL.createObjectURL(e.target.files[0])
 }
 
-function drawImage(image, width, height) {
+function drawImage(title, image, width, height) {
   const outerdiv = document.createElement("div")
+  const titleEl = document.createElement("h2")
+  titleEl.innerText = title
+  outerdiv.appendChild(titleEl)
   const canvas = document.createElement("canvas")
 
   canvas.setAttribute('width', width)
@@ -67,7 +75,9 @@ function processData(image) {
     yuv[0],
     ...uvChroma
   ]
-  // drawImage(channelToRGBA(yuvSampled[0]), width, height)
+  drawImage("Y-channel image", channelToRGBA(yuvSampled[0]), width, height)
+  drawImage("U-channel image", channelToRGBA(yuvSampled[1]), width/2, height/2)
+  drawImage("V-channel image", channelToRGBA(yuvSampled[2]), width/2, height/2)
 
 
   // 3. dct transformation & quantization & inverse
@@ -108,26 +118,49 @@ function processData(image) {
     }
   }
 
+  // drawImage("V-channel image", channelToRGBA(yuvSampled[2]), width/2, height/2)
+  // drawImage("T-matrix", channelToRGBA(blocksToChanArray(Tmatrix), 8,8), 8,8)
+
+  let dctizedBlocks=[[],[],[]]
+  let unquantizedBlocks = [[],[],[]]
+
+
   // 3c. DCT -> quantize -> unquantize -> IDCT
   for (let i=0; i<yuvBlocks.length; ++i) {
     const blocks = yuvBlocks[i]
     for (let j=0; j<blocks.length; ++j) {
       // i. normal -> DCT
       let dct = blockDCT(Tmatrix, blocks[j]);
+      dctizedBlocks[i].push(dct)
       // ii. DCT -> quantize
       let quantized = quantize(q10Matrix, dct)
       // iii. quantize -> unquantize
       let unquantized = unquantize(q10Matrix, quantized)
+      unquantizedBlocks[i].push(unquantized)
       // iv. unquantize -> IDCT
       let idct = blockIDCT(Tmatrix, unquantized)
       yuvBlocks[i][j] = idct
     }
   }
 
+
+  drawImage("DCT Y-Channel matrix",channelToRGBA(blocksToChanArray(dctizedBlocks[0], width, height)), width, height)
+  drawImage("DCT U-Channel matrix",channelToRGBA(blocksToChanArray(dctizedBlocks[1], width/2, height/2)), width/2, height/2)
+  drawImage("DCT V-Channel matrix",channelToRGBA(blocksToChanArray(dctizedBlocks[2], width/2, height/2)), width/2, height/2)
+
+  drawImage("Unquantized Y-Channel",channelToRGBA(blocksToChanArray(unquantizedBlocks[0], width, height)), width, height)
+  drawImage("Unquantized U-Channel",channelToRGBA(blocksToChanArray(unquantizedBlocks[1], width/2, height/2)), width/2, height/2)
+  drawImage("Unquantized V-Channel",channelToRGBA(blocksToChanArray(unquantizedBlocks[2], width/2, height/2)), width/2, height/2)
+
   // 4. combine y/u/v channels into one
   let yChan = blocksToChanArray(yuvBlocks[0], width, height)
   let uChan = blocksToChanArray(yuvBlocks[1], width/2, height/2)
   let vChan = blocksToChanArray(yuvBlocks[2], width/2, height/2)
+
+
+  drawImage("IDCT Y-Channel", channelToRGBA(yChan), width, height)
+  drawImage("IDCT U-Channel", channelToRGBA(uChan), width/2, height/2)
+  drawImage("IDCT V-Channel", channelToRGBA(vChan), width/2, height/2)
 
   let yuvMerged = Array(height).fill().map(_ => [])
   for (let i=0, counter=0; i<height; i+=2) {
@@ -150,7 +183,8 @@ function processData(image) {
     const [r,g,b] = yuv2rgb(yuvMerged[i], yuvMerged[i+1], yuvMerged[i+2])
     rgba.push(r,g,b,255)
   }
-  drawImage(rgba, width, height)
+
+  drawImage("Final image", rgba, width, height)
 
 }
 
